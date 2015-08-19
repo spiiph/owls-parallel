@@ -1,13 +1,13 @@
 """Provides a multiprocessing-based parallelization backend.
 """
 
-
 # HACK: Use absolute_import behavior to get around module having the same name
 # as the global multiprocessing module
 from __future__ import absolute_import
 
 # System imports
 from multiprocessing import Pool
+from traceback import print_exc
 
 # Six imports
 from six import iteritems, itervalues
@@ -24,7 +24,11 @@ def _run(cache, job):
     with caching_into(cache):
         for batcher, calls in iteritems(job):
             for function, args_kwargs in iteritems(calls):
-                batcher(function, args_kwargs)
+                try:
+                    batcher(function, args_kwargs)
+                except Exception:
+                    print_exc()
+                    raise
 
 
 class MultiprocessingParallelizationBackend(ParallelizationBackend):
