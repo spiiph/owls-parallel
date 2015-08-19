@@ -10,7 +10,6 @@ import os
 import threading
 from collections import defaultdict
 from functools import wraps
-from time import sleep
 from sys import stdout
 
 # Six imports
@@ -52,7 +51,7 @@ def _batcher(function, args_kwargs):
         function(*args, **kwargs)
 
 
-def parallelized(mocker, mapper, batcher = _batcher):
+def parallelized(mocker, mapper, batcher = _batcher, parallel_pass = 1):
     """Decorator to add parallelization functionality to a callable.
 
     The underlying function, or some function further down the call stack, must
@@ -98,8 +97,10 @@ def parallelized(mocker, mapper, batcher = _batcher):
             # Grab the current parallelizer
             parallelizer = _get_parallelizer()
 
-            # If we're not in capture mode, then we're done
-            if parallelizer is None:
+            # If we're not in capture mode or if we're in the wrong pass,
+            # then we're done
+            if parallelizer is None or \
+               parallelizer.parallel_pass() != parallel_pass:
                 return f(*args, **kwargs)
 
             # Otherwise, we are in capture mode, so we need to compute the key
@@ -109,7 +110,8 @@ def parallelized(mocker, mapper, batcher = _batcher):
             # Register the job with the parallelizer
             # NOTE: We register the *wrapper* function, because it is what will
             # be assigned to the name of the function
-            parallelizer._record(key, batcher, wrapper, args, kwargs)
+            parallelizer._record(key, batcher, wrapper, args, kwargs,
+                    parallel_pass)
 
             # Return a dummy value
             return mocker(*args, **kwargs)
@@ -156,33 +158,39 @@ class ParallelizedEnvironment(object):
         # Create variables to track run state
         self._captured = False
         self._computed = False
+        self._parallel_pass = 1
 
-        # Create the list of register jobs.  Structure is:
-        # {
-        #     {
-        #         key: {
-        #             batcher: {
-        #                 function: [
-        #                     (args1, kwargs1),
-        #                     ...
-        #                     (argsN, kwargsN),
-        #                 ],
-        #                 ...
-        #             },
-        #             ...
-        #         },
-        #         ...
-        #     }
-        # }
-        self._jobs = defaultdict(
-            lambda: defaultdict(lambda: defaultdict(list))
-        )
+        self._initialize_jobs()
 
         # Store the backend and progress interval
         self._backend = backend
         self._monitor_interval = monitor_interval
 
-    def _record(self, key, batcher, function, args, kwargs):
+    def _initialize_jobs(self):
+        """Initialize the job register. Called before each pass.
+        """
+        # Create the list of register jobs.  Structure is:
+        # {
+        # {
+        #     key: {
+        #         batcher: {
+        #             function: [
+        #                 (args1, kwargs1),
+        #                 ...
+        #                 (argsN, kwargsN),
+        #             ],
+        #             ...
+        #         },
+        #         ...
+        #     },
+        #     ...
+        # }
+        # }
+        self._jobs = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
+
+    def _record(self, key, batcher, function, args, kwargs, parallel_pass):
         """Adds a new job to be computed on the parallel backend.
 
         Args:
@@ -192,8 +200,10 @@ class ParallelizedEnvironment(object):
             function: The function to execute
             args: The arguments to the function
             kwargs: The keyword arguments to the function
+            parallel_pass: Which pass the parallelized function belongs to
         """
-        self._jobs[key][batcher][function].append((args, kwargs))
+        if self._parallel_pass == parallel_pass:
+            self._jobs[key][batcher][function].append((args, kwargs))
 
     def _compute(self, progress):
         """Runs computation and blocks until completion, optionally printing
@@ -279,11 +289,23 @@ class ParallelizedEnvironment(object):
                 break
 
     def capturing(self):
-        """Returns True if the environment is in capture mode, False otherwise.
+        """Returns True if the environment is in capture mode, False
+        otherwise.
         """
         return self._captured and not self._computed
 
-    def run(self, progress = True):
+    def computed(self):
+        """Returns True if the environment has finished computing, False
+        otherwise.
+        """
+        return self._computed
+
+    def parallel_pass(self):
+        """Returns the current pass
+        """
+        return self._parallel_pass
+
+    def run(self, progress = True, passes = 1):
         """Manages execution in a parallelized environment, optionally printing
         progress.
 
@@ -313,6 +335,7 @@ class ParallelizedEnvironment(object):
 
         Args:
             progress: Whether or not to print progress information
+            passes: How many parallel computation passes to run
 
         Returns:
             True or False depending on run state.
@@ -330,8 +353,10 @@ class ParallelizedEnvironment(object):
             # If we haven't captured yet, then set the parallelizer for
             # capturing and allow the loop to run
             if progress:
-                print('Capturing for parallelization...')
+                print('Capturing for parallelization (pass {0})...'.\
+                        format(self._parallel_pass))
             self._captured = True
+            self._computed = False
             _set_parallelizer(self)
             return True
         elif not self._computed:
@@ -339,9 +364,16 @@ class ParallelizedEnvironment(object):
             # parallelizer and run the computations in a blocking manner, then
             # allow the loop to run to pull values out of the persistent cache
             if progress:
-                print('Computing in parallel...')
+                print('Computing in parallel (pass {0})...'.\
+                        format(self._parallel_pass))
             self._computed = True
             _set_parallelizer(None)
             self._compute(progress)
+            if self._parallel_pass < passes:
+                self._captured = False
+                self._parallel_pass += 1
+                self._initialize_jobs()
+            # TODO: Add an option to return false after all passes have
+            # completed the computation step
             return True
         return False
