@@ -1,6 +1,11 @@
 owls-parallel
 =============
 
-[![Build Status](https://travis-ci.org/havoc-io/owls-parallel.png?branch=master)](https://travis-ci.org/havoc-io/owls-parallel)
-
 The OWLS parallelization module
+
+Contributors
+============
+Jacob Howard <jacob@havoc.io> (Author)
+Henrik Öhman <speeph@gmail.com> (Maintainter)
+
+Distributed under the [MIT license](LICENSE)

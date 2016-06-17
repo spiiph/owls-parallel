@@ -17,19 +17,19 @@ owls_python_version_check()
 setup(
     # Basic installation information
     name = 'owls-parallel',
-    version = '0.0.1',
+    version = '0.0.2',
     packages = find_packages(exclude = ['common', 'testing']),
 
     # Setup dependencies
     install_requires = [
-        'owls-cache >= 0.0.1',
+        'owls-cache >= 0.0.2',
     ],
 
     # Metadata for PyPI
-    author = 'Jacob Howard',
-    author_email = 'jacob@havoc.io',
+    author = 'Henrik Öhman',
+    author_email = 'speeph@gmail.com',
     description = 'Modular analysis toolkit - parallelization module',
     license = 'MIT',
     keywords = 'python big data analysis',
-    url = 'https://github.com/havoc-io/owls-parallel'
+    url = 'https://github.com/spiiph/owls-parallel'
 )
